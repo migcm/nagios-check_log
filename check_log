@@ -1,0 +1,113 @@
+#!/bin/bash
+
+STATE_OK=0
+STATE_WARNING=1
+STATE_CRITICAL=2
+STATE_UNKOWN=3
+
+man(){
+        echo -e "\n*******"
+        echo "Check if there is a certain text in a log file."
+        echo "The plugin will return WARNING status if a certain word is found in the indicated log."
+        echo "The plugin will return CRITICAL status if a certain word is found in the indicated log."
+        echo "*******"
+        echo -e "\n------- check_log written by Miguel Calvo (ES), v1.0, 29.03.2019 -------\n"
+        echo -e "\nSyntax:"
+        echo -e "\tcheck_log Word_to_search_warning_state Word_to_search_critical_state log_file\n"
+        echo "Examples: "
+        echo -e "\tcheck_log WARNING CRITICAL /var/log/nginx/access.log"
+        echo -e "\tcheck_log '404' '193.123.215.5' /var/log/nginx/access.log"
+}
+
+
+if [ $# == 3 ]
+then
+        SEARCH_WARNING=$1
+        SEARCH_CRITICAL=$2
+        LOG_FILE=$3
+else
+        man
+        exit $STATE_UNKOWN
+fi
+
+# Check if log file exists.
+if [ ! -e "$LOG_FILE" ]
+then
+        echo "File $LOG_FILE not found."
+        exit $STATE_UNKOWN
+fi
+
+# Remove spaces of warning/critical keywords.
+STATE_WARNING_CLEAN=`echo $SEARCH_WARNING | sed "s/[ t][ t]*//g"`
+STATE_CRITICAL_CLEAN=`echo $SEARCH_CRITICAL | sed "s/[ t][ t]*//g"`
+
+# Create Lock and Temp file_manager
+TEMP_FILE_WARNING="/tmp/log-$STATE_WARNING_CLEAN.tmp"
+TEMP_FILE_CRITICAL="/tmp/log-$STATE_CRITICAL_CLEAN.tmp"
+if [ ! -e "$TEMP_FILE_WARNING" ]
+then
+        touch $TEMP_FILE_WARNING
+fi
+if [ ! -e "$TEMP_FILE_CRITICAL" ]
+then
+        touch $TEMP_FILE_CRITICAL
+fi
+PIDT=`ps -ef |grep "tail -f $LOG_FILE" |grep -v grep`
+
+
+# Check if the tail is running
+if [ ! "$PIDT" == "" ]; then
+
+        message=""
+
+        while read -r line; do
+
+                warningLine=`echo ${line#*|}`
+                warningHash=`echo ${line%|*}`
+                isWarning=1
+
+                if [[ $warningHash == "[-]"* ]]; then
+                        warningHash=${warningHash#'[-]'}
+                        sed -i.bak "/${warningHash}/d" $TEMP_FILE_WARNING
+                else
+                        sed -i "/${warningHash}\|/c [-]${warningHash} | ${warningLine}" $TEMP_FILE_WARNING
+                fi
+
+                message="$message {[WARNING LOG LINE]: '$warningLine'}, "
+
+        done < "$TEMP_FILE_WARNING"
+
+        while read -r line; do
+
+                criticalLine=`echo ${line#*/|}`
+                criticalHash=`echo ${line%/|*}`
+                isCritical=1
+
+                if [[ $criticalHash == "[-]"* ]]; then
+                        criticalHash=${criticalHash#'[-]'}
+                        sed -i.bak "/${criticalHash}/d" $TEMP_FILE_CRITICAL
+                else
+                        sed -i "/${criticalHash}\|/c [-]${criticalHash} | ${criticalLine}" $TEMP_FILE_CRITICAL
+                fi
+
+                message="$message {[CRITICAL LOG LINE]: '$criticalLine'}, "
+
+        done < "$TEMP_FILE_CRITICAL"
+
+else
+        echo  "UNKOWN - Starting the script."
+        `nohup tail -f $LOG_FILE |grep --line-buffered "$SEARCH_WARNING" | while read line; do hash=$(echo -n "$line" | md5sum -) && echo ${hash:0:32} \| $line; done > "$TEMP_FILE_WARNING" &`
+        `nohup tail -f $LOG_FILE |grep --line-buffered "$SEARCH_CRITICAL" | while read line; do hash=$(echo -n "$line" | md5sum -) && echo ${hash:0:32} \| $line; done > "$TEMP_FILE_WARNING" &`
+        exit $STATE_UNKOWN
+fi	
+
+if [ "$isCritical" == 1 ] ; then
+    echo  "CRITICAL - There are critical errors in $LOG_FILE: $message | SEARCH_WARNING=$SEARCH_WARNING;SEARCH_CRITICAL=$SEARCH_CRITICAL"
+    exit $STATE_CRITICAL
+elif [ "$isWarning" == 1 ] ; then
+    echo "WARNING - There are warnings in $LOG_FILE: $message | SEARCH_WARNING=$SEARCH_WARNING;SEARCH_CRITICAL=$SEARCH_CRITICAL"
+    exit $STATE_WARNING
+else
+    echo "OK - There are no errors in $LOG_FILE | SEARCH_WARNING=$SEARCH_WARNING;SEARCH_CRITICAL=$SEARCH_CRITICAL"
+    exit $STATE_OK
+fi
