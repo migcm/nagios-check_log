@@ -10,4 +10,5 @@ The plugin will return CRITICAL status if a certain word is found in the indicat
 ### Examples:
 
 ```check_log WARNING CRITICAL /var/log/nginx/access.log```
+
 ```check_log '404' '193.123.215.5' /var/log/nginx/access.log```
