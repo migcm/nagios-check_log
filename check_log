@@ -4,6 +4,8 @@ STATE_OK=0
 STATE_WARNING=1
 STATE_CRITICAL=2
 STATE_UNKOWN=3
+isWarning=0
+isCritical=0
 
 man(){
         echo -e "\n*******"
@@ -38,8 +40,8 @@ then
 fi
 
 # Remove spaces of warning/critical keywords.
-STATE_WARNING_CLEAN=`echo $SEARCH_WARNING | sed "s/[ t][ t]*//g"`
-STATE_CRITICAL_CLEAN=`echo $SEARCH_CRITICAL | sed "s/[ t][ t]*//g"`
+STATE_WARNING_CLEAN=`echo $SEARCH_WARNING | sed "s/[^a-zA-Z*0-9]//g"`
+STATE_CRITICAL_CLEAN=`echo $SEARCH_CRITICAL | sed "s/[^a-zA-Z*0-9]//g"`
 
 # Create Lock and Temp file_manager
 TEMP_FILE_WARNING="/tmp/log-$STATE_WARNING_CLEAN.tmp"
@@ -66,11 +68,20 @@ if [ ! "$PIDT" == "" ]; then
                 warningHash=`echo ${line%|*}`
                 isWarning=1
 
-                if [[ $warningHash == "[-]"* ]]; then
-                        warningHash=${warningHash#'[-]'}
+                if [[ $warningHash == "[1]"* ]]; then
+
+                        warningHash=${warningHash#'[1]'}
+                        sed -i "/${warningHash}\|/c [2]${warningHash} | ${warningLine}" $TEMP_FILE_WARNING
+
+                 elif [[ $warningHash == "[2]"* ]]; then
+
+                        warningHash=${warningHash#'[2]'}
                         sed -i.bak "/${warningHash}/d" $TEMP_FILE_WARNING
+
                 else
-                        sed -i "/${warningHash}\|/c [-]${warningHash} | ${warningLine}" $TEMP_FILE_WARNING
+
+                        sed -i "/${warningHash}\|/c [1]${warningHash} | ${warningLine}" $TEMP_FILE_WARNING
+
                 fi
 
                 message="$message {[WARNING LOG LINE]: '$warningLine'}, "
@@ -83,11 +94,20 @@ if [ ! "$PIDT" == "" ]; then
                 criticalHash=`echo ${line%/|*}`
                 isCritical=1
 
-                if [[ $criticalHash == "[-]"* ]]; then
-                        criticalHash=${criticalHash#'[-]'}
+                if [[ $criticalHash == "[1]"* ]]; then
+
+                        criticalHash=${criticalHash#'[1]'}
+                        sed -i "/${criticalHash}\|/c [2]${criticalHash} | ${criticalLine}" $TEMP_FILE_CRITICAL
+
+                elif [[ $criticalHash == "[2]"* ]]; then
+
+                        criticalHash=${criticalHash#'[2]'}
                         sed -i.bak "/${criticalHash}/d" $TEMP_FILE_CRITICAL
+
                 else
-                        sed -i "/${criticalHash}\|/c [-]${criticalHash} | ${criticalLine}" $TEMP_FILE_CRITICAL
+
+                        sed -i "/${criticalHash}\|/c [1]${criticalHash} | ${criticalLine}" $TEMP_FILE_CRITICAL
+
                 fi
 
                 message="$message {[CRITICAL LOG LINE]: '$criticalLine'}, "
@@ -95,11 +115,21 @@ if [ ! "$PIDT" == "" ]; then
         done < "$TEMP_FILE_CRITICAL"
 
 else
-        echo  "UNKOWN - Starting the script."
-        `nohup tail -f $LOG_FILE |grep --line-buffered "$SEARCH_WARNING" | while read line; do hash=$(echo -n "$line" | md5sum -) && echo ${hash:0:32} \| $line; done > "$TEMP_FILE_WARNING" &`
-        `nohup tail -f $LOG_FILE |grep --line-buffered "$SEARCH_CRITICAL" | while read line; do hash=$(echo -n "$line" | md5sum -) && echo ${hash:0:32} \| $line; done > "$TEMP_FILE_WARNING" &`
+
+	if [ ! "$SEARCH_WARNING" == "" ] ; then
+		SEARCH_WARNING_CLEAN=$(echo $SEARCH_WARNING | sed 's/"//g')
+        	`nohup tail -f $LOG_FILE |grep --line-buffered \""$SEARCH_WARNING_CLEAN"\" | while read line; do hash=$(echo -n "$line" | md5sum -) && echo ${hash:0:32} \| $line; done > "$TEMP_FILE_WARNING" &`
+	fi
+
+	if [ ! "$SEARCH_CRITICAL" == "" ] ; then
+		SEARCH_CRITICAL_CLEAN=$(echo $SEARCH_CRITICAL | sed 's/"//g')
+        	`nohup tail -f $LOG_FILE |grep --line-buffered \""$SEARCH_CRITICAL_CLEAN"\" | while read line; do hash=$(echo -n "$line" | md5sum -) && echo ${hash:0:32} \| \| $line; done > "$TEMP_FILE_WARNING" &`
+	fi
+
+        echo  "UNKOWN - Starting the script for $LOG_FILE. | SEARCH_WARNING=$SEARCH_WARNING_CLEAN;SEARCH_CRITICAL=$SEARCH_CRITICAL_CLEAN"
         exit $STATE_UNKOWN
-fi	
+fi
+
 
 if [ "$isCritical" == 1 ] ; then
     echo  "CRITICAL - There are critical errors in $LOG_FILE: $message | SEARCH_WARNING=$SEARCH_WARNING;SEARCH_CRITICAL=$SEARCH_CRITICAL"
@@ -108,6 +138,6 @@ elif [ "$isWarning" == 1 ] ; then
     echo "WARNING - There are warnings in $LOG_FILE: $message | SEARCH_WARNING=$SEARCH_WARNING;SEARCH_CRITICAL=$SEARCH_CRITICAL"
     exit $STATE_WARNING
 else
-    echo "OK - There are no errors in $LOG_FILE | SEARCH_WARNING=$SEARCH_WARNING;SEARCH_CRITICAL=$SEARCH_CRITICAL"
+    echo "OK - There are no errors in $LOG_FILE. | SEARCH_WARNING=$SEARCH_WARNING;SEARCH_CRITICAL=$SEARCH_CRITICAL"
     exit $STATE_OK
 fi
