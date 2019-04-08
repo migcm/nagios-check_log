@@ -1,8 +1,8 @@
 # nagios-check_log
 
 Check if there is a certain text in a log file.
-The plugin will return WARNING status if a certain word is found in the indicated log.
-The plugin will return CRITICAL status if a certain word is found in the indicated log.
+* The plugin will return WARNING status if a certain word is found in the indicated log.
+* The plugin will return CRITICAL status if a certain word is found in the indicated log.
 
 ### Syntax:
 ```check_log Word_to_search_warning_state Word_to_search_critical_state log_file```
